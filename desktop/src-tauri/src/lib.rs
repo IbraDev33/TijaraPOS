@@ -4,6 +4,7 @@ mod catalog;
 mod commands;
 mod db;
 mod error;
+mod inventory;
 mod sales;
 
 use tauri::Manager;
@@ -48,6 +49,9 @@ fn register_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         commands::sales::sales_list,
         commands::sales::sales_get,
         commands::sales::sales_cancel,
+        commands::inventory::inventory_adjust_stock,
+        commands::inventory::inventory_list_movements,
+        commands::inventory::inventory_low_stock,
     ])
 }
 
@@ -331,6 +335,84 @@ mod ipc_contract_tests {
         let cancelled = invoke(&webview, "sales_cancel", json!({ "id": sale_id }))
             .expect("sales_cancel should succeed");
         assert_eq!(cancelled["status"], "cancelled");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn inventory_ipc_contract_smoke_test() {
+        let dir = std::env::temp_dir().join(format!("tijarapos-ipc-inventory-test-{}", unique()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pool = db::init(&dir.join("test.sqlite3")).unwrap();
+
+        let app = register_commands(mock_builder())
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        app.manage(pool);
+        app.manage(auth::AuthState::default());
+        let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+
+        invoke(
+            &webview,
+            "auth_bootstrap_admin",
+            json!({ "username": "admin", "password": "supersecret123", "fullName": "Admin User" }),
+        )
+        .unwrap();
+
+        let unit = invoke(
+            &webview,
+            "units_create",
+            json!({ "input": { "name": "Piece", "abbreviation": "pc" } }),
+        )
+        .unwrap();
+        let unit_id = unit["id"].as_i64().unwrap();
+
+        let product = invoke(
+            &webview,
+            "products_create",
+            json!({
+                "input": {
+                    "sku": "SKU-1", "name": "Widget", "description": null,
+                    "categoryId": null, "brandId": null, "unitId": unit_id,
+                    "purchasePrice": 500, "sellingPrice": 1000,
+                    "taxId": null, "discountId": null, "minStock": 5,
+                    "imagePath": null, "barcodes": [],
+                }
+            }),
+        )
+        .unwrap();
+        let product_id = product["id"].as_i64().unwrap();
+
+        // Exactly the shape `features/inventory/api.ts`'s `adjustStock` sends.
+        let result = invoke(
+            &webview,
+            "inventory_adjust_stock",
+            json!({
+                "input": {
+                    "productId": product_id,
+                    "quantityDelta": 20,
+                    "reason": "adjustment",
+                    "note": "Initial stock take",
+                }
+            }),
+        )
+        .expect("adjustment should succeed");
+        assert_eq!(result["currentStock"], 20);
+
+        let low =
+            invoke(&webview, "inventory_low_stock", json!({})).expect("low_stock should succeed");
+        assert_eq!(
+            low.as_array().unwrap().len(),
+            0,
+            "20 in stock should clear a min of 5"
+        );
+
+        let movements = invoke(&webview, "inventory_list_movements", json!({ "query": {} }))
+            .expect("list_movements should succeed");
+        assert_eq!(movements.as_array().unwrap().len(), 1);
+        assert_eq!(movements[0]["reason"], "adjustment");
 
         std::fs::remove_dir_all(&dir).ok();
     }

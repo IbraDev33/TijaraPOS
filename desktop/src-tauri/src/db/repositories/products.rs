@@ -149,6 +149,22 @@ pub fn find_by_barcode(conn: &Connection, barcode: &str) -> rusqlite::Result<Opt
     product.map(|p| with_barcodes(conn, p)).transpose()
 }
 
+/// Active products at or below their configured minimum stock level.
+pub fn list_low_stock(conn: &Connection) -> rusqlite::Result<Vec<ProductRow>> {
+    let sql = format!(
+        "SELECT {SELECT_COLUMNS} {FROM_CLAUSE}
+         WHERE p.deleted_at IS NULL AND p.is_active = 1 AND p.current_stock <= p.min_stock
+         ORDER BY p.name"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows: Vec<ProductRow> = stmt
+        .query_map([], map_row)?
+        .collect::<rusqlite::Result<_>>()?;
+    rows.into_iter()
+        .map(|row| with_barcodes(conn, row))
+        .collect()
+}
+
 fn replace_barcodes(
     conn: &Connection,
     product_id: i64,

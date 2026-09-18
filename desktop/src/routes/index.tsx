@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom'
 
 import { AppLayout } from '@/components/layout/AppLayout'
+import { InventoryPage } from '@/features/inventory/InventoryPage'
 import { ProductsPage } from '@/features/products/ProductsPage'
 import { CheckoutPage } from '@/features/sales/CheckoutPage'
 import { SalesHistoryPage } from '@/features/sales/SalesHistoryPage'
@@ -14,6 +15,7 @@ export function AppRoutes() {
         <Route path="/pos" element={<CheckoutPage />} />
         <Route path="/sales" element={<SalesHistoryPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/inventory" element={<InventoryPage />} />
       </Route>
     </Routes>
   )

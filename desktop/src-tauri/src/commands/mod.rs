@@ -5,4 +5,5 @@
 
 pub mod auth;
 pub mod catalog;
+pub mod inventory;
 pub mod sales;

@@ -58,8 +58,8 @@ the next begins.
 | 3 | Desktop authentication + RBAC | ✅ Done |
 | 4 | Product / category management | ✅ Done |
 | 5 | POS checkout | ✅ Done |
-| 6 | Inventory | Next |
-| 7 | Customers + suppliers | Planned |
+| 6 | Inventory | ✅ Done |
+| 7 | Customers + suppliers | Next |
 | 8 | Cash register | Planned |
 | 9 | Reports | Planned |
 | 10 | Local API | Planned |
@@ -318,4 +318,46 @@ Keyboard shortcuts cover F2/F9/Esc, not the full configurable set from
 the original brief (Delete, +/-) — a later UI/UX pass, not blocking
 checkout itself.
 
-**Next phase:** Phase 6 — Inventory.
+## Phase 6 summary
+
+**Files created:**
+- `desktop/src-tauri/src/db/repositories/stock_adjustments.rs` (new) and
+  extensions to `stock_movements.rs` (a `list` joined with product/user
+  names) and `products.rs` (`list_low_stock`).
+- `desktop/src-tauri/src/inventory/`: `adjust_stock` — the one place
+  manual stock changes happen outside a sale — validates the reason
+  (`adjustment`/`return`/`damage`/`transfer`; `sale`/`purchase` are
+  system-generated only, rejected here), rejects a delta that would drive
+  `current_stock` negative, and in one transaction writes both the
+  human-facing `stock_adjustments` row and the `stock_movements` ledger
+  row before updating the product and writing an audit log. `list_movements`
+  and `low_stock` back the inventory views.
+- `desktop/src-tauri/src/commands/inventory.rs`: `inventory_adjust_stock`
+  (permission `stock.adjust`), `inventory_list_movements`/
+  `inventory_low_stock` (`stock.view`).
+- `desktop/src/features/inventory/`: an Inventory page (low-stock table,
+  an adjustment form reusing the same product-search pattern as
+  checkout, and a recent-movements history table), plus a low-stock
+  widget added to the Dashboard.
+
+**Verified:**
+- `cargo test`: 40 passing, including `adjust_stock_rejects_a_delta_
+  that_would_go_negative` (zero partial writes on failure, same pattern
+  as Phase 5's stock check), `low_stock_returns_only_products_at_or_
+  below_their_minimum`, and an `inventory_ipc_contract_smoke_test`
+  extending the same real-dispatcher technique from Phases 4–5.
+- `cargo clippy --all-targets`, `cargo build`, `npm run
+  typecheck/lint/build` all clean; rebuilt the binary and ran it
+  headlessly to confirm a clean startup log.
+
+**Known, deliberate scope cut:** purchase receiving (the other half of
+"Inventory" in the original brief) needs a supplier, and suppliers have
+no CRUD yet — that's Phase 7's job by name ("Customers + suppliers").
+Building a purchase-receiving flow against a table with no way to create
+a supplier would mean faking half the feature; it's deferred rather than
+half-built, and revisited once Phase 7 lands. Everything else from the
+brief's inventory list — stock in/out, manual adjustment, returns,
+damaged goods, stock history, low-stock alerts — is implemented, and
+sales' own stock deduction was already done in Phase 5.
+
+**Next phase:** Phase 7 — Customers + suppliers.

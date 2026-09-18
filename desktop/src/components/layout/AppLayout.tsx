@@ -10,6 +10,7 @@ const NAV_ITEMS: { to: string; label: string; end: boolean; permission?: Permiss
   { to: '/pos', label: 'Checkout', end: false, permission: PERMISSIONS.SalesCreate },
   { to: '/sales', label: 'Sales', end: false, permission: PERMISSIONS.SalesView },
   { to: '/products', label: 'Products', end: false, permission: PERMISSIONS.ProductsView },
+  { to: '/inventory', label: 'Inventory', end: false, permission: PERMISSIONS.StockView },
 ]
 
 export function AppLayout() {

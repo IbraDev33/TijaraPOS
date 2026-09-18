@@ -7,6 +7,7 @@ use serde::Serialize;
 
 use crate::auth::AuthError;
 use crate::catalog::CatalogError;
+use crate::inventory::InventoryError;
 use crate::sales::SalesError;
 
 #[derive(Debug, Serialize)]
@@ -89,6 +90,31 @@ impl From<SalesError> for CommandError {
             ),
             SalesError::Db(_) | SalesError::Sqlite(_) => {
                 log::error!("sales command failed: {err}");
+                CommandError::new("INTERNAL_ERROR", "Something went wrong. Please try again.")
+            }
+        }
+    }
+}
+
+impl From<InventoryError> for CommandError {
+    fn from(err: InventoryError) -> Self {
+        match err {
+            InventoryError::Validation(message) => CommandError::new("VALIDATION_ERROR", &message),
+            InventoryError::ProductNotFound => {
+                CommandError::new("PRODUCT_NOT_FOUND", "Product not found")
+            }
+            InventoryError::WouldGoNegative {
+                product_name,
+                current_stock,
+                requested_delta,
+            } => CommandError::new(
+                "STOCK_WOULD_GO_NEGATIVE",
+                &format!(
+                    "{product_name} only has {current_stock} in stock; a change of {requested_delta} would make it negative"
+                ),
+            ),
+            InventoryError::Db(_) | InventoryError::Sqlite(_) => {
+                log::error!("inventory command failed: {err}");
                 CommandError::new("INTERNAL_ERROR", "Something went wrong. Please try again.")
             }
         }

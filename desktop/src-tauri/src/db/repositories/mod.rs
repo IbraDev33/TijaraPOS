@@ -10,6 +10,7 @@ pub mod discounts;
 pub mod products;
 pub mod rbac;
 pub mod sales;
+pub mod stock_adjustments;
 pub mod stock_movements;
 pub mod taxes;
 pub mod units;
