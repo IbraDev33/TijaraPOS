@@ -1,0 +1,9 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Each app manages its own toolchain-specific ignores (node_modules, dist,
+# target/, .dart_tool/, build/, etc.) in desktop/.gitignore and
+# mobile/.gitignore.
