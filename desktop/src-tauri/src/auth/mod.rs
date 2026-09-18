@@ -19,8 +19,8 @@ pub enum AuthError {
     InvalidCredentials,
     #[error("this account has been disabled")]
     AccountDisabled,
-    /// Not constructed until Phase 4+ commands start requiring a logged-in
-    /// user before checking a specific permission.
+    #[error("not authenticated")]
+    NotAuthenticated,
     #[error("insufficient permissions")]
     Forbidden,
     #[error("setup has already been completed")]
@@ -131,21 +131,34 @@ pub fn login(
     })
 }
 
-// Consumed starting Phase 4, when the first commands that need a
-// permission check (beyond auth itself) are added; already exercised by
-// the tests below.
-#[allow(dead_code)]
 pub fn has_permission(user: &AuthenticatedUser, key: &str) -> bool {
     user.permissions.iter().any(|p| p == key)
 }
 
-#[allow(dead_code)]
 pub fn require_permission(user: &AuthenticatedUser, key: &str) -> Result<(), AuthError> {
     if has_permission(user, key) {
         Ok(())
     } else {
         Err(AuthError::Forbidden)
     }
+}
+
+/// The single check every protected Tauri command (and, from Phase 10,
+/// every protected API route) performs first: is anyone logged in, and do
+/// they hold this permission. Returns the current user so the caller can
+/// use it (e.g. to stamp an audit log) without a second lookup.
+pub fn require_permission_for(
+    state: &AuthState,
+    key: &str,
+) -> Result<AuthenticatedUser, AuthError> {
+    let user = state
+        .0
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or(AuthError::NotAuthenticated)?;
+    require_permission(&user, key)?;
+    Ok(user)
 }
 
 fn sorted(set: HashSet<String>) -> Vec<String> {

@@ -4,3 +4,4 @@
 //! local API in `api/`, rather than being duplicated in either layer.
 
 pub mod auth;
+pub mod catalog;

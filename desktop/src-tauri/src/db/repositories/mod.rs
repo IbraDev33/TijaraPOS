@@ -3,5 +3,11 @@
 //! transaction (`rusqlite::Transaction` derefs to `Connection`) — the
 //! caller decides the transaction boundary, repositories never do.
 
+pub mod brands;
+pub mod categories;
+pub mod discounts;
+pub mod products;
 pub mod rbac;
+pub mod taxes;
+pub mod units;
 pub mod users;

@@ -6,6 +6,7 @@
 use serde::Serialize;
 
 use crate::auth::AuthError;
+use crate::catalog::CatalogError;
 
 #[derive(Debug, Serialize)]
 pub struct CommandError {
@@ -31,6 +32,9 @@ impl From<AuthError> for CommandError {
             AuthError::AccountDisabled => {
                 CommandError::new("ACCOUNT_DISABLED", "This account has been disabled")
             }
+            AuthError::NotAuthenticated => {
+                CommandError::new("UNAUTHORIZED", "You must be logged in to do this")
+            }
             AuthError::Forbidden => {
                 CommandError::new("FORBIDDEN", "You do not have permission to do this")
             }
@@ -40,6 +44,22 @@ impl From<AuthError> for CommandError {
             AuthError::Validation(message) => CommandError::new("VALIDATION_ERROR", &message),
             AuthError::Internal | AuthError::Db(_) | AuthError::Sqlite(_) => {
                 log::error!("auth command failed: {err}");
+                CommandError::new("INTERNAL_ERROR", "Something went wrong. Please try again.")
+            }
+        }
+    }
+}
+
+impl From<CatalogError> for CommandError {
+    fn from(err: CatalogError) -> Self {
+        match err {
+            CatalogError::NotFound(entity) => {
+                CommandError::new("NOT_FOUND", &format!("{entity} not found"))
+            }
+            CatalogError::Validation(message) => CommandError::new("VALIDATION_ERROR", &message),
+            CatalogError::Conflict(message) => CommandError::new("CONFLICT", &message),
+            CatalogError::Db(_) | CatalogError::Sqlite(_) => {
+                log::error!("catalog command failed: {err}");
                 CommandError::new("INTERNAL_ERROR", "Something went wrong. Please try again.")
             }
         }

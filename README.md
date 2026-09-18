@@ -56,8 +56,8 @@ the next begins.
 | 1 | Architecture, repository structure, tooling | ✅ Done |
 | 2 | SQLite schema + migrations | ✅ Done |
 | 3 | Desktop authentication + RBAC | ✅ Done |
-| 4 | Product / category management | Next |
-| 5 | POS checkout | Planned |
+| 4 | Product / category management | ✅ Done |
+| 5 | POS checkout | Next |
 | 6 | Inventory | Planned |
 | 7 | Customers + suppliers | Planned |
 | 8 | Cash register | Planned |
@@ -181,4 +181,64 @@ full interactive click-through of the login/setup UI wasn't performed —
 verified via the real backend run above plus frontend build/typecheck,
 not by driving the webview with input events.
 
-**Next phase:** Phase 4 — Product / category management.
+## Phase 4 summary
+
+**Files created:**
+- `desktop/src-tauri/src/db/repositories/{categories,brands,units,taxes,discounts,products}.rs`
+  — plain SQL for the catalog tables, matching the Phase 2 schema exactly
+  (categories/products have `is_active` + `deleted_at`; brands/units have
+  `deleted_at` only; taxes/discounts have `is_active` only — no hard
+  delete for either, since products can still reference them).
+  `products.rs` also owns `product_barcodes` (replace-all-on-update) and
+  a denormalized join (category/brand/unit names) plus `find_by_barcode`.
+- `desktop/src-tauri/src/catalog/` — the business-logic layer: input
+  validation, turning a `UNIQUE constraint failed` SQLite error into a
+  message like "A product with this SKU already exists"
+  (`error::friendly_conflict`), and transaction boundaries for
+  product+barcodes writes. One module per entity
+  (`categories`/`brands`/`units`/`taxes`/`discounts`/`products`).
+- `desktop/src-tauri/src/commands/catalog.rs` — 25 thin Tauri command
+  wrappers; every one starts with `auth::require_permission_for` (the
+  first real consumer of that Phase 3 helper) gated on
+  `products.view/create/update/delete`.
+- `desktop/src/features/products/` — `api.ts` (Zod-validated `invoke()`
+  wrappers), `queries.ts` (TanStack Query hooks + mutations for every
+  entity), `ProductsPage.tsx` (search/category filter/show-inactive,
+  table with permission-gated edit/delete), `ProductFormDialog.tsx`
+  (React Hook Form + Zod: category/brand/unit/tax/discount selects,
+  dynamic barcode list, decimal price fields converted to integer cents
+  via `lib/money.ts`), and `CatalogSettingsDialog.tsx` (compact
+  add/list/deactivate management for categories, brands, units, taxes,
+  and discounts).
+- `desktop/src/components/layout/AppLayout.tsx` — the first real nav
+  shell (Dashboard/Products links + signed-in user + logout), now that
+  there's more than one page; wired in as a layout route.
+- New shadcn-style primitives: `dialog.tsx`, `select.tsx`, `table.tsx`,
+  `badge.tsx`, `checkbox.tsx` (a plain native checkbox, not a Radix
+  primitive — native semantics were enough for a single boolean input).
+
+**Verified:**
+- `cargo test`: 27 passing. Beyond the usual create/update/validation
+  coverage, two tests specifically target the riskiest part of this
+  phase — the camelCase (frontend) ↔ snake_case (Rust) boundary — by
+  driving Tauri's real IPC dispatch (`tauri::test::get_ipc_response`)
+  with the exact JSON a browser `invoke()` call would send, rather than
+  calling Rust functions directly: `full_ipc_contract_smoke_test` walks
+  bootstrap → create category → create unit → create product (with
+  `categoryId`/`unitId`/`purchasePrice`-style keys) → barcode lookup →
+  list, and `a_cashier_is_rejected_by_the_real_ipc_dispatch_...` proves
+  an unauthenticated session gets `UNAUTHORIZED` from the real command
+  dispatcher, not just from a unit test of the permission-check function.
+- `cargo clippy --all-targets` and `cargo build` clean.
+- `npm run typecheck`, `lint`, and `build` all pass.
+- Rebuilt the actual binary and ran it headlessly again (`xvfb-run`):
+  starts cleanly, database still initializes correctly.
+
+**Known limitations:** no image upload — `image_path` exists in the
+schema/DTO but there's no file picker yet (would need the Tauri dialog
+plugin); deferred rather than half-built. Full interactive click-through
+of the Products UI wasn't performed for the same reason as Phase 3 (no
+way to drive webview input events here); confidence instead comes from
+the IPC contract tests above plus frontend build/typecheck.
+
+**Next phase:** Phase 5 — POS checkout.
