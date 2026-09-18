@@ -1,12 +1,21 @@
 mod api;
+mod auth;
 mod commands;
 mod db;
+mod error;
 
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            commands::auth::auth_needs_setup,
+            commands::auth::auth_bootstrap_admin,
+            commands::auth::auth_login,
+            commands::auth::auth_logout,
+            commands::auth::auth_current_user,
+        ])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -26,6 +35,7 @@ pub fn run() {
             })?;
             log::info!("database ready at {}", db_path.display());
             app.manage(pool);
+            app.manage(auth::AuthState::default());
 
             Ok(())
         })

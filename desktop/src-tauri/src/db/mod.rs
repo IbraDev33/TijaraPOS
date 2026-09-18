@@ -1,9 +1,10 @@
-//! SQLite connection pool, schema migrations, and (in later phases)
-//! repositories. This is the single source of truth for the desktop app;
-//! the mobile app never accesses it directly, only through the local API
-//! in `api/` (Phase 10), which itself calls into repositories built here.
+//! SQLite connection pool, schema migrations, and repositories. This is
+//! the single source of truth for the desktop app; the mobile app never
+//! accesses it directly, only through the local API in `api/` (Phase 10),
+//! which itself calls into the repositories built here.
 
 pub mod migrations;
+pub mod repositories;
 
 use std::path::Path;
 

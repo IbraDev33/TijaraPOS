@@ -55,8 +55,8 @@ the next begins.
 |---|---|---|
 | 1 | Architecture, repository structure, tooling | ✅ Done |
 | 2 | SQLite schema + migrations | ✅ Done |
-| 3 | Desktop authentication + RBAC | Next |
-| 4 | Product / category management | Planned |
+| 3 | Desktop authentication + RBAC | ✅ Done |
+| 4 | Product / category management | Next |
 | 5 | POS checkout | Planned |
 | 6 | Inventory | Planned |
 | 7 | Customers + suppliers | Planned |
@@ -96,11 +96,10 @@ the next begins.
   --debug` succeeds as a compile smoke test in the absence of Android/iOS
   SDKs in this environment (see `docs/deployment.md` for details).
 
-**Known limitations:** no auth yet (Phase 3), no local API yet (Phase 10)
-— the two apps do not talk to each other until Phase 11. Mobile
-Android/iOS builds are unverified in this container (no SDKs installed
-here); Desktop Windows/macOS bundles are unverified (Linux-only
-container).
+**Known limitations:** no local API yet (Phase 10) — the two apps do not
+talk to each other until Phase 11. Mobile Android/iOS builds are
+unverified in this container (no SDKs installed here); Desktop
+Windows/macOS bundles are unverified (Linux-only container).
 
 ## Phase 2 summary
 
@@ -133,4 +132,53 @@ alone beyond CHECK constraints and FKs). No default admin user is
 seeded — Phase 3 creates the first account via a setup flow rather than a
 hardcoded credential.
 
-**Next phase:** Phase 3 — Desktop authentication + RBAC.
+## Phase 3 summary
+
+**Files created:**
+- `desktop/src-tauri/src/db/repositories/{users,rbac}.rs` — plain SQL
+  data access (find/insert users, resolve a user's effective permissions
+  across their roles), usable with both a pooled connection and a
+  transaction.
+- `desktop/src-tauri/src/auth/` — `password.rs` (Argon2id hashing,
+  isolated to one file), `mod.rs` (`needs_setup`, `bootstrap_admin`,
+  `login`, `has_permission`/`require_permission`, input validation, and an
+  `AuthState` holding the desktop app's one active session). A failed
+  login for an unknown username does the same Argon2 work as a wrong
+  password, so the two aren't distinguishable by response time.
+- `desktop/src-tauri/src/error.rs` — `CommandError { code, message }`,
+  the shape every Tauri command error takes; internal errors (SQL
+  failures, etc.) are logged server-side and never forwarded to the UI.
+- `desktop/src-tauri/src/commands/auth.rs` — `auth_needs_setup`,
+  `auth_bootstrap_admin`, `auth_login`, `auth_logout`, `auth_current_user`
+  Tauri commands, registered and given managed `AuthState` in `lib.rs`.
+- `desktop/src/features/auth/` — `api.ts` (typed, Zod-validated `invoke()`
+  wrappers), `AuthProvider.tsx` (TanStack Query-backed `useAuth()`
+  context: `user`, `needsSetup`, `login`, `bootstrapAdmin`, `logout`,
+  `hasPermission`), `RequirePermission.tsx`, `SetupPage.tsx` and
+  `LoginPage.tsx` (React Hook Form + Zod). `App.tsx` now gates on
+  `needsSetup`/`user` instead of always showing the dashboard, and
+  `DashboardPage` shows the signed-in user, their resolved permissions,
+  and a logout button.
+- `desktop/src/lib/permissions.ts` — the `PERMISSIONS` catalog (mirroring
+  the seeded permission keys) and `PermissionKey` type, so features
+  reference `PERMISSIONS.ProductsCreate` instead of a raw string.
+- New shadcn-style primitives: `input.tsx`, `label.tsx`, `card.tsx`.
+
+**Verified:**
+- `cargo test`: 11 tests passing, including bootstrap-then-login,
+  wrong-password vs. unknown-username both rejected identically, disabled
+  accounts rejected, and permission resolution. `cargo clippy
+  --all-targets` and `cargo build` clean.
+- `npm run typecheck`, `lint`, and `build` all pass.
+- Ran the actual compiled binary headlessly (`tauri build --debug
+  --no-bundle` + `xvfb-run`): the app started, resolved its OS app-data
+  directory, ran migrations, and every table from Phase 2 exists in the
+  resulting database file — a real end-to-end run, not just unit tests.
+
+**Known limitations:** no protected commands exist yet to exercise
+`require_permission` outside of tests (the first ones land in Phase 4);
+full interactive click-through of the login/setup UI wasn't performed —
+verified via the real backend run above plus frontend build/typecheck,
+not by driving the webview with input events.
+
+**Next phase:** Phase 4 — Product / category management.
