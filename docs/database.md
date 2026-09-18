@@ -115,3 +115,51 @@ migrations themselves are authored.
 - Never hard-delete a row that other tables reference by foreign key;
   soft-delete (`deleted_at`) and let sync propagate the tombstone.
 - Never let a normal role delete from `audit_logs`.
+
+## Implementation (Phase 2)
+
+The design above is implemented as forward-only SQL files in
+`desktop/database/migrations/`, applied in order by
+`desktop/src-tauri/src/db/migrations.rs`:
+
+| File | Contents |
+|---|---|
+| `0001_identity_and_rbac.sql` | users, roles, permissions, role_permissions, user_roles |
+| `0002_devices.sql` | devices, device_sessions |
+| `0003_pricing_rules.sql` | discounts, taxes (created before products, which reference them) |
+| `0004_catalog.sql` | categories, brands, units, products, product_barcodes, product_prices |
+| `0005_parties.sql` | customers, suppliers |
+| `0006_sales.sql` | sales (UUID primary key), sale_items, payments |
+| `0007_purchases.sql` | purchases, purchase_items |
+| `0008_inventory.sql` | stock_movements, stock_adjustments |
+| `0009_cash_and_expenses.sql` | cash_registers, cash_sessions, cash_movements, expenses |
+| `0010_system.sql` | settings, audit_logs, sync_events |
+| `0011_seed_rbac.sql` | seeds the permission catalog, the five roles, and role_permissions |
+
+Notes on deviations from the plain design above, made while implementing it:
+
+- `sync_events.id` (an autoincrement integer) **is** the `server_version`
+  referenced in `api.md`/`synchronization.md` — there is no separate column
+  for it, since one strictly-increasing autoincrement key already gives the
+  global counter the sync protocol needs.
+- `updated_at` on every mutable master-data table is maintained by an
+  `AFTER UPDATE` trigger, not by application code remembering to set it —
+  one less way for a future write path to get it wrong.
+- Money is `INTEGER` (minor units); `taxes.rate` is `REAL` (a percentage,
+  e.g. `0.2` for 20%).
+
+The runner (`db::migrations::run`) tracks applied versions in a
+`schema_migrations` table it creates itself, applies each pending
+migration inside its own transaction, and is idempotent — safe to call on
+every app startup (see `db::init` in `desktop/src-tauri/src/db/mod.rs`,
+called from `src-tauri/src/lib.rs`'s `setup()` hook). Migration SQL is
+embedded into the binary at compile time via `rust-embed`, so a bundled
+release doesn't depend on the working directory. Every pooled connection
+gets `PRAGMA foreign_keys = ON` and `PRAGMA journal_mode = WAL` on
+creation, since SQLite does not persist the foreign-key pragma in the
+database file itself.
+
+Tests: `desktop/src-tauri/src/db/migrations.rs` and `db/mod.rs` have unit
+tests proving the full schema applies cleanly, re-running is a no-op,
+foreign keys are actually enforced, and the RBAC seed data is present
+(run with `cargo test` from `desktop/src-tauri/`).

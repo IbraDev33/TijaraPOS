@@ -54,8 +54,8 @@ the next begins.
 | # | Phase | Status |
 |---|---|---|
 | 1 | Architecture, repository structure, tooling | ✅ Done |
-| 2 | SQLite schema + migrations | Next |
-| 3 | Desktop authentication + RBAC | Planned |
+| 2 | SQLite schema + migrations | ✅ Done |
+| 3 | Desktop authentication + RBAC | Next |
 | 4 | Product / category management | Planned |
 | 5 | POS checkout | Planned |
 | 6 | Inventory | Planned |
@@ -96,10 +96,41 @@ the next begins.
   --debug` succeeds as a compile smoke test in the absence of Android/iOS
   SDKs in this environment (see `docs/deployment.md` for details).
 
-**Known limitations:** no database yet (Phase 2), no auth yet (Phase 3),
-no local API yet (Phase 10) — the two apps do not talk to each other
-until Phase 11. Mobile Android/iOS builds are unverified in this
-container (no SDKs installed here); Desktop Windows/macOS bundles are
-unverified (Linux-only container).
+**Known limitations:** no auth yet (Phase 3), no local API yet (Phase 10)
+— the two apps do not talk to each other until Phase 11. Mobile
+Android/iOS builds are unverified in this container (no SDKs installed
+here); Desktop Windows/macOS bundles are unverified (Linux-only
+container).
 
-**Next phase:** Phase 2 — SQLite schema + migrations.
+## Phase 2 summary
+
+**Files created:**
+- `desktop/database/migrations/0001`–`0011` — forward-only SQL migrations
+  implementing every table from `docs/database.md`: identity/RBAC,
+  devices, pricing rules, catalog, parties, sales, purchases, inventory,
+  cash register/expenses, and system tables (settings/audit/sync), plus a
+  seed migration for the permission catalog and the five roles.
+- `desktop/src-tauri/src/db/migrations.rs` — embeds the migration files
+  (`rust-embed`) and applies pending ones transactionally, tracked in a
+  `schema_migrations` table.
+- `desktop/src-tauri/src/db/mod.rs` — connection pool (`r2d2` +
+  `r2d2_sqlite`) with `PRAGMA foreign_keys`/WAL enabled per connection,
+  and `db::init()` wired into `lib.rs`'s Tauri `setup()` hook (DB lives in
+  the OS app-data directory, managed as Tauri state for future commands).
+
+**Verified:**
+- `cargo test` (from `desktop/src-tauri/`): 4 tests passing — full schema
+  applies to a fresh database, re-running migrations is a no-op, foreign
+  keys are actually enforced (rejecting a product with a non-existent
+  `unit_id`), and the RBAC seed data is present with `admin` holding every
+  permission.
+- `cargo check`, `cargo clippy --all-targets`, and `cargo build` all clean.
+
+**Known limitations:** no repositories/business logic on top of the
+schema yet (stock-movement invariants, sale transactions, etc. are
+enforced by application code built in Phases 4–8, not by the schema
+alone beyond CHECK constraints and FKs). No default admin user is
+seeded — Phase 3 creates the first account via a setup flow rather than a
+hardcoded credential.
+
+**Next phase:** Phase 3 — Desktop authentication + RBAC.
