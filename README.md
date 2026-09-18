@@ -57,8 +57,8 @@ the next begins.
 | 2 | SQLite schema + migrations | ✅ Done |
 | 3 | Desktop authentication + RBAC | ✅ Done |
 | 4 | Product / category management | ✅ Done |
-| 5 | POS checkout | Next |
-| 6 | Inventory | Planned |
+| 5 | POS checkout | ✅ Done |
+| 6 | Inventory | Next |
 | 7 | Customers + suppliers | Planned |
 | 8 | Cash register | Planned |
 | 9 | Reports | Planned |
@@ -241,4 +241,81 @@ of the Products UI wasn't performed for the same reason as Phase 3 (no
 way to drive webview input events here); confidence instead comes from
 the IPC contract tests above plus frontend build/typecheck.
 
-**Next phase:** Phase 5 — POS checkout.
+## Phase 5 summary
+
+**Files created:**
+- `desktop/src-tauri/src/db/repositories/{sales,stock_movements,audit_logs}.rs`
+  and `products.rs::adjust_stock`: the SQL behind checkout — sale/sale_item/
+  payment inserts, sequential `INV-YYYYMMDD-NNNN` invoice numbers computed
+  inside the sale transaction, and the append-only stock_movements/
+  audit_logs writers.
+- `desktop/src-tauri/src/sales/`: the checkout transaction — snapshots
+  each product's price/tax/discount at sale time (never trusts a client-
+  supplied price), enforces live stock availability, computes per-line
+  discount (from the product's assigned discount, or a cashier-entered
+  override) and tax, decrements stock and writes a `stock_movements` row
+  per line, writes an audit log, all inside one SQLite transaction so a
+  failure anywhere (bad product id, insufficient stock, underpayment)
+  rolls back every write. Supports mixed payments (paid amount can exceed
+  the total; change is `paid - total`, always derivable, not persisted as
+  its own column) and an idempotency key (a retried checkout with the
+  same key returns the original sale instead of duplicating it — the
+  mechanism docs/synchronization.md describes for Phase 14's offline
+  queue, implemented here first). `cancel` reverses the same stock
+  movements and audit-logs the status change.
+- `desktop/src-tauri/src/commands/sales.rs`: `sales_checkout` (permission
+  `sales.create`), `sales_list`/`sales_get` (`sales.view`), `sales_cancel`
+  (`sales.cancel`).
+- `desktop/src/features/sales/`: `api.ts` (Zod-validated wrappers),
+  `cartMath.ts` (client-side preview of the same discount/tax formulas,
+  used only so the cart shows live running totals — the receipt always
+  renders the server's authoritative response, never this preview),
+  `CheckoutPage.tsx` (barcode-scan-or-search input — a scan is just fast
+  typing ending in Enter, which triggers an exact barcode lookup; typing
+  shows a click-to-add results list — editable quantity/discount per
+  line, a payment panel supporting multiple payment rows for mixed
+  payment, live change/due display, F2/F9/Esc shortcuts),
+  `ReceiptView.tsx` (a printable receipt via `window.print()` and
+  `@media print` rules added to `styles/globals.css`), and
+  `SalesHistoryPage.tsx` (list, view receipt, cancel).
+- Nav gained Checkout and Sales entries, each hidden unless the signed-in
+  user holds the corresponding permission.
+
+**A real bug caught by the verification, not shipped:** the first
+`cargo build` + headless run logged `[r2d2][ERROR] database is locked`
+during startup — r2d2 eagerly opens up to `max_size` connections as soon
+as the pool is built, and that warm-up raced the migration transaction
+for SQLite's single-writer lock. It was self-recovering (`busy_timeout`
+made it retry), but not something to ship and explain away. Fixed by
+running migrations on their own connection before the pool is
+constructed at all (`db::init` in `desktop/src-tauri/src/db/mod.rs`) —
+found *because* this phase's verification step is "build the real binary
+and watch it start," not just `cargo test`.
+
+**Verified:**
+- `cargo test`: 34 passing, including `checkout_computes_tax_and_
+  discount_and_deducts_stock`, `checkout_rejects_insufficient_stock_
+  with_no_partial_writes` (asserts zero side effects on failure),
+  `checkout_is_idempotent`, `checkout_supports_mixed_payments`, and
+  `cancel_reverses_stock_and_sets_status`. Extended the Phase 4 IPC-
+  contract technique with `checkout_ipc_contract_smoke_test`, which
+  drives `sales_checkout`/`sales_get`/`sales_list`/`sales_cancel` through
+  Tauri's real dispatcher with the exact camelCase JSON
+  `features/sales/api.ts` sends.
+- `cargo clippy --all-targets` and `cargo build` clean; `npm run
+  typecheck`/`lint`/`build` clean.
+- Rebuilt the binary and ran it headlessly twice — once that caught the
+  r2d2 race above, once after the fix to confirm a clean startup log.
+
+**Known limitations, by design:** customer selection is deferred to
+Phase 7 (every Phase 5 sale is a walk-in sale, `customer_id: null`) —
+building a picker against a table with no CRUD yet would be backwards.
+Refunds are out of scope; `cancel` (full void, permission `sales.cancel`)
+covers "undo a mistake," not partial-item returns. No thermal-printer
+integration — `window.print()` on a template is the real, working
+receipt output for now; ESC/POS/58mm/80mm driver work is Phase 16.
+Keyboard shortcuts cover F2/F9/Esc, not the full configurable set from
+the original brief (Delete, +/-) — a later UI/UX pass, not blocking
+checkout itself.
+
+**Next phase:** Phase 6 — Inventory.

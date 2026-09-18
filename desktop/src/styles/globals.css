@@ -101,3 +101,21 @@
     @apply outline-ring outline-2 outline-offset-2;
   }
 }
+
+/* Printing a receipt (features/sales/ReceiptView.tsx): hide everything
+   except the receipt itself, so `window.print()` doesn't print app chrome. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #receipt-print-area,
+  #receipt-print-area * {
+    visibility: visible;
+  }
+  #receipt-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+}

@@ -7,6 +7,7 @@ use serde::Serialize;
 
 use crate::auth::AuthError;
 use crate::catalog::CatalogError;
+use crate::sales::SalesError;
 
 #[derive(Debug, Serialize)]
 pub struct CommandError {
@@ -60,6 +61,34 @@ impl From<CatalogError> for CommandError {
             CatalogError::Conflict(message) => CommandError::new("CONFLICT", &message),
             CatalogError::Db(_) | CatalogError::Sqlite(_) => {
                 log::error!("catalog command failed: {err}");
+                CommandError::new("INTERNAL_ERROR", "Something went wrong. Please try again.")
+            }
+        }
+    }
+}
+
+impl From<SalesError> for CommandError {
+    fn from(err: SalesError) -> Self {
+        match err {
+            SalesError::Validation(message) => CommandError::new("VALIDATION_ERROR", &message),
+            SalesError::ProductNotFound => {
+                CommandError::new("PRODUCT_NOT_FOUND", "One of the products in this sale was not found")
+            }
+            SalesError::InsufficientStock {
+                product_name,
+                available,
+                requested,
+            } => CommandError::new(
+                "INSUFFICIENT_STOCK",
+                &format!("Not enough stock for {product_name}: {available} available, {requested} requested"),
+            ),
+            SalesError::SaleNotFound => CommandError::new("NOT_FOUND", "Sale not found"),
+            SalesError::InvalidStatusTransition(status) => CommandError::new(
+                "INVALID_STATUS",
+                &format!("This sale is already {status} and cannot be changed"),
+            ),
+            SalesError::Db(_) | SalesError::Sqlite(_) => {
+                log::error!("sales command failed: {err}");
                 CommandError::new("INTERNAL_ERROR", "Something went wrong. Please try again.")
             }
         }

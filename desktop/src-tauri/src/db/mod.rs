@@ -9,6 +9,7 @@ pub mod repositories;
 use std::path::Path;
 
 use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::Connection;
 
 pub type DbPool = r2d2::Pool<SqliteConnectionManager>;
 
@@ -24,6 +25,10 @@ pub enum DbError {
     Io(#[from] std::io::Error),
 }
 
+const PRAGMAS: &str = "PRAGMA foreign_keys = ON;
+     PRAGMA journal_mode = WAL;
+     PRAGMA busy_timeout = 5000;";
+
 /// Opens (creating if necessary) the SQLite database at `db_path`,
 /// applies any pending migrations, and returns a ready-to-use connection
 /// pool. Every pooled connection has foreign key enforcement and WAL mode
@@ -34,17 +39,21 @@ pub fn init(db_path: &Path) -> Result<DbPool, DbError> {
         std::fs::create_dir_all(parent)?;
     }
 
-    let manager = SqliteConnectionManager::file(db_path).with_init(|conn| {
-        conn.execute_batch(
-            "PRAGMA foreign_keys = ON;
-             PRAGMA journal_mode = WAL;
-             PRAGMA busy_timeout = 5000;",
-        )
-    });
-    let pool = r2d2::Pool::builder().max_size(8).build(manager)?;
+    // Migrations run on their own connection, before the pool exists.
+    // r2d2 eagerly opens up to `max_size` connections as soon as the pool
+    // is built; running the migration transaction concurrently with that
+    // warm-up raced for SQLite's single writer lock and logged spurious
+    // "database is locked" errors on startup (self-recovering, thanks to
+    // busy_timeout, but worth avoiding rather than explaining away).
+    {
+        let mut conn = Connection::open(db_path)?;
+        conn.execute_batch(PRAGMAS)?;
+        migrations::run(&mut conn)?;
+    }
 
-    let mut conn = pool.get()?;
-    migrations::run(&mut conn)?;
+    let manager =
+        SqliteConnectionManager::file(db_path).with_init(|conn| conn.execute_batch(PRAGMAS));
+    let pool = r2d2::Pool::builder().max_size(8).build(manager)?;
 
     Ok(pool)
 }

@@ -4,6 +4,7 @@ mod catalog;
 mod commands;
 mod db;
 mod error;
+mod sales;
 
 use tauri::Manager;
 
@@ -43,6 +44,10 @@ fn register_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         commands::catalog::products_update,
         commands::catalog::products_set_active,
         commands::catalog::products_delete,
+        commands::sales::sales_checkout,
+        commands::sales::sales_list,
+        commands::sales::sales_get,
+        commands::sales::sales_cancel,
     ])
 }
 
@@ -239,6 +244,93 @@ mod ipc_contract_tests {
         )
         .expect_err("an unauthenticated request must be rejected");
         assert_eq!(err["code"], "UNAUTHORIZED");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn checkout_ipc_contract_smoke_test() {
+        let dir = std::env::temp_dir().join(format!("tijarapos-ipc-checkout-test-{}", unique()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pool = db::init(&dir.join("test.sqlite3")).unwrap();
+
+        let app = register_commands(mock_builder())
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        app.manage(pool.clone());
+        app.manage(auth::AuthState::default());
+        let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+
+        invoke(
+            &webview,
+            "auth_bootstrap_admin",
+            json!({ "username": "admin", "password": "supersecret123", "fullName": "Admin User" }),
+        )
+        .unwrap();
+
+        let unit = invoke(
+            &webview,
+            "units_create",
+            json!({ "input": { "name": "Piece", "abbreviation": "pc" } }),
+        )
+        .unwrap();
+        let unit_id = unit["id"].as_i64().unwrap();
+
+        let product = invoke(
+            &webview,
+            "products_create",
+            json!({
+                "input": {
+                    "sku": "SKU-1", "name": "Widget", "description": null,
+                    "categoryId": null, "brandId": null, "unitId": unit_id,
+                    "purchasePrice": 500, "sellingPrice": 1000,
+                    "taxId": null, "discountId": null, "minStock": 0,
+                    "imagePath": null, "barcodes": [],
+                }
+            }),
+        )
+        .unwrap();
+        let product_id = product["id"].as_i64().unwrap();
+
+        // Stock provisioning has no IPC command yet (that's Phase 6,
+        // Inventory) — reach into the repository directly for setup only;
+        // the checkout call below is what this test actually verifies.
+        {
+            let conn = pool.get().unwrap();
+            db::repositories::products::adjust_stock(&conn, product_id, 10).unwrap();
+        }
+
+        // Exactly the shape `features/sales/api.ts`'s `checkout` sends.
+        let result = invoke(
+            &webview,
+            "sales_checkout",
+            json!({
+                "input": {
+                    "customerId": null,
+                    "items": [{ "productId": product_id, "quantity": 2, "discountOverride": null }],
+                    "payments": [{ "method": "cash", "amount": 2000 }],
+                    "idempotencyKey": null,
+                }
+            }),
+        )
+        .expect("checkout should succeed");
+        assert_eq!(result["sale"]["total"], 2000);
+        assert_eq!(result["change"], 0);
+
+        let sale_id = result["sale"]["id"].as_str().unwrap();
+        let fetched = invoke(&webview, "sales_get", json!({ "id": sale_id }))
+            .expect("sales_get should succeed");
+        assert_eq!(fetched["invoice_number"], result["sale"]["invoice_number"]);
+
+        let list = invoke(&webview, "sales_list", json!({ "query": {} }))
+            .expect("sales_list should succeed");
+        assert_eq!(list.as_array().unwrap().len(), 1);
+
+        let cancelled = invoke(&webview, "sales_cancel", json!({ "id": sale_id }))
+            .expect("sales_cancel should succeed");
+        assert_eq!(cancelled["status"], "cancelled");
 
         std::fs::remove_dir_all(&dir).ok();
     }

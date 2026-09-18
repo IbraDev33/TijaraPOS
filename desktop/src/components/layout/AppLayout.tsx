@@ -2,15 +2,21 @@ import { NavLink, Outlet } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { PERMISSIONS, type PermissionKey } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
-const NAV_ITEMS = [
+const NAV_ITEMS: { to: string; label: string; end: boolean; permission?: PermissionKey }[] = [
   { to: '/', label: 'Dashboard', end: true },
-  { to: '/products', label: 'Products', end: false },
-] as const
+  { to: '/pos', label: 'Checkout', end: false, permission: PERMISSIONS.SalesCreate },
+  { to: '/sales', label: 'Sales', end: false, permission: PERMISSIONS.SalesView },
+  { to: '/products', label: 'Products', end: false, permission: PERMISSIONS.ProductsView },
+]
 
 export function AppLayout() {
-  const { user, logout } = useAuth()
+  const { user, logout, hasPermission } = useAuth()
+  const visibleItems = NAV_ITEMS.filter(
+    (item) => !item.permission || hasPermission(item.permission),
+  )
 
   return (
     <div className="bg-background text-foreground flex min-h-svh flex-col">
@@ -18,7 +24,7 @@ export function AppLayout() {
         <div className="flex items-center gap-6">
           <span className="text-sm font-semibold">TijaraPOS</span>
           <nav className="flex items-center gap-1">
-            {NAV_ITEMS.map((item) => (
+            {visibleItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

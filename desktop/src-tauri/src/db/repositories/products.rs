@@ -237,3 +237,15 @@ pub fn soft_delete(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     )?;
     Ok(())
 }
+
+/// Applies `delta` (positive or negative) to `current_stock`. Callers are
+/// responsible for inserting the matching `stock_movements` row in the
+/// same transaction — this function does not do it itself, since it has
+/// no way to know the movement's reason/reference.
+pub fn adjust_stock(conn: &Connection, product_id: i64, delta: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE products SET current_stock = current_stock + ?1 WHERE id = ?2",
+        params![delta, product_id],
+    )?;
+    Ok(())
+}
